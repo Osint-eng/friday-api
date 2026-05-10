@@ -2,10 +2,10 @@ import json
 import os
 import datetime
 import urllib.request
-import urllib.error
 from http.server import BaseHTTPRequestHandler
 
-ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL   = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
 
 FRIDAY_SYSTEM = (
     "You are Friday, the witty and loyal AI assistant from Iron Man. "
@@ -19,32 +19,29 @@ def build_system():
     now = datetime.datetime.now().strftime("%B %d, %Y — %I:%M %p")
     return f"{FRIDAY_SYSTEM} Current date & time: {now}"
 
-def call_claude(messages):
-    if not ANTHROPIC_KEY:
-        raise Exception("No ANTHROPIC_API_KEY set")
-
-    claude_messages = [m for m in messages if m["role"] != "system"]
+def call_groq(messages):
+    if not GROQ_API_KEY:
+        raise Exception("No GROQ_API_KEY set")
 
     body = json.dumps({
-        "model": "claude-haiku-4-5-20251001",
+        "model": GROQ_MODEL,
+        "messages": messages,
         "max_tokens": 300,
-        "system": build_system(),
-        "messages": claude_messages
+        "temperature": 0.7
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
+        "https://api.groq.com/openai/v1/chat/completions",
         data=body,
         headers={
-            "x-api-key": ANTHROPIC_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
         },
         method="POST"
     )
     with urllib.request.urlopen(req, timeout=30) as res:
         data = json.loads(res.read().decode())
-        return data["content"][0]["text"].strip()
+        return data["choices"][0]["message"]["content"].strip()
 
 
 class handler(BaseHTTPRequestHandler):
@@ -63,11 +60,8 @@ class handler(BaseHTTPRequestHandler):
             "name": "F.R.I.D.A.Y API",
             "version": "1.0.0",
             "status": "online",
-            "engine": "claude",
-            "endpoints": {
-                "chat":   "POST /api/chat",
-                "health": "GET  /api/health"
-            }
+            "engine": "groq",
+            "model": GROQ_MODEL
         }).encode())
 
     def do_POST(self):
@@ -87,12 +81,12 @@ class handler(BaseHTTPRequestHandler):
                 messages.append({"role": m["role"], "content": m["content"]})
             messages.append({"role": "user", "content": message})
 
-            reply = call_claude(messages)
+            reply = call_groq(messages)
 
             self._json(200, {
                 "reply": reply,
-                "model_used": "claude-haiku-4-5-20251001",
-                "engine": "claude"
+                "model_used": GROQ_MODEL,
+                "engine": "groq"
             })
 
         except Exception as e:
